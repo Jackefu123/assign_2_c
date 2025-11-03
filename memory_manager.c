@@ -4,14 +4,14 @@
 #include <string.h>
 #include <pthread.h>
 
-// Trådsäker minneshanterare med grovkornig låsning (coarse-grained locking)
-// Implementerar trådsäkerhet genom att använda en enda mutex för alla minnesoperationer
-// Detta garanterar att endast en tråd i taget kan modifiera minnesstrukturen
+// coarse-grained locking
+// 1 mutex för alla minnesoperationer
+// bara en tråd i taget kan modifiera minnesstrukturen
 
 typedef struct MemBlock {
     size_t offset;         // Offset i minnespoolen där detta block börjar
-    size_t size;           // Storleken på detta minnesblock i bytes
-    int is_free;           // 1 om blocket är ledigt, 0 om det är allokerat
+    size_t size;           // Storleken
+    int is_free;           // 1 = ledigt, 0 = allokerat
     struct MemBlock* next; // Pekare till nästa block i listan
 } MemBlock;
 
@@ -20,15 +20,14 @@ static char* memory_pool = NULL;    // Pekare till den allokerade minnespoolen
 static size_t pool_size = 0;        // Total storlek på minnespoolen
 static MemBlock* block_list = NULL; // Länkad lista över alla minnesblock
 
-// Trådsäkerhetsmekanism: Grovkornig låsning (coarse-grained locking)
-// En enda mutex skyddar hela minneshanteraren för enkelhetens skull
-// Fördel: Enkel att implementera och garanterar fullständig trådsäkerhet
-// Nackdel: Kan bli en flaskhals vid hög samtidighet då endast en operation kan ske åt gången
+// coarse-grained locking
+// En mutex skyddar hela minneshanteraren för enkelhetens skull
+// F: Enkel att implementera och garanterar fullständig trådsäkerhet, N: bottleneck vid hög samtidighet då bara 1 operation kan göras åt gången
 static pthread_mutex_t memory_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Initierar minneshanteraren med en pool av specificerad storlek
 // Trådsäkerhet: Låser under hela initieringen för att förhindra samtidig initiering
-// Kallas typiskt endast en gång vid programstart, så låsning påverkar inte prestanda
+// Kallas bara en gång vid starten, så låsning påverkar inte prestanda
 void mem_init(size_t size) {
     pthread_mutex_lock(&memory_lock); // Serialiserar initieringen - endast en tråd kan initiera åt gången
 
