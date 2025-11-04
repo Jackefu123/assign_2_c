@@ -3,21 +3,17 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-// Trådsäker länkad lista med grovkornig låsning (coarse-grained locking)
-// Implementerar trådsäkerhet genom att använda en enda mutex för alla listoperationer
-// Detta garanterar att endast en tråd i taget kan modifiera eller läsa listan
+// coarse-grained locking
+// 1 mutex för alla minnesoperationer
+// bara en tråd i taget kan modifiera minnesstrukturen
 
-// Trådsäkerhetsmekanism: Grovkornig låsning (coarse-grained locking)
-// En enda mutex skyddar hela listan för enkelhetens skull
-// Fördel: Enkel att implementera, garanterar fullständig konsistens
-// Nackdel: Både läsare och skrivare konkurrerar om samma lås, kan begränsa prestanda
-// Alternativ: Read-write locks skulle tillåta samtidiga läsningar
+// F, Enkel att implementera, garanterar fullständig konsistens, N: Både läsare och skrivare konkurrerar om samma lås, kan begränsa prestanda
+// Read-write locks skulle tillåta samtidiga läsningar
 pthread_mutex_t list_mutex = PTHREAD_MUTEX_INITIALIZER;
 extern pthread_mutex_t list_mutex; // Redundant omdeklaration; behålls för kompatibilitet
 
 // Initierar en tom länkad lista
-// Trådsäkerhet: Låser under initiering trots att funktionen typiskt anropas en gång
-// Detta förhindrar problem om flera trådar försöker initiera samtidigt
+// Låser under initiering trots att funktionen typiskt anropas en gång
 void list_init(Node** head, size_t size) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - skyddar initiering
     *head = NULL; // Tom lista
@@ -26,14 +22,13 @@ void list_init(Node** head, size_t size) {
 }
 
 // Lägger till en ny nod i slutet av listan
-// Trådsäkerhet: Hela operationen är atomisk genom mutex-låsning
+// Hela operationen är atomisk genom mutex-låsning
 // Förhindrar race conditions när flera trådar försöker lägga till samtidigt
-// TODO: Bör använda mem_alloc istället för malloc enligt uppgiftens krav
 void list_insert(Node** head, uint16_t data) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - endast en skrivare åt gången
     
-    // Allokera ny nod
-    // TODO: Använd mem_alloc för att integrera med den anpassade minneshanteraren
+    // Allokera ny nod 
+    // mem_alloc egentligen
     Node* new_node = (Node*)malloc(sizeof(Node));
     
     // Felhantering: Kontrollera om allokeringen lyckades
@@ -63,9 +58,8 @@ void list_insert(Node** head, uint16_t data) {
 }
 
 // Lägger till en ny nod efter en given nod
-// Trådsäkerhet: Mutex skyddar liststrukturen under modifiering
+// Mutex skyddar liststrukturen under modifiering
 // Kritisk för att förhindra korruption om flera trådar ändrar samma område
-// TODO: Bör använda mem_alloc istället för malloc enligt uppgiftens krav
 void list_insert_after(Node* prev_node, uint16_t data) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - skyddar strukturmodifiering
     
@@ -77,7 +71,6 @@ void list_insert_after(Node* prev_node, uint16_t data) {
     }
     
     // Allokera ny nod
-    // TODO: Använd mem_alloc för att integrera med den anpassade minneshanteraren
     Node* new_node = (Node*)malloc(sizeof(Node));
     
     // Felhantering: Kontrollera om allokeringen lyckades
@@ -87,7 +80,7 @@ void list_insert_after(Node* prev_node, uint16_t data) {
         return;
     }
     
-    // Atomisk insättning: Uppdatera pekare för att länka in den nya noden
+    // Uppdatera pekare för att länka in den nya noden
     new_node->data = data;
     new_node->next = prev_node->next; // Peka på nästa nod
     prev_node->next = new_node;       // Föregående nod pekar nu på den nya
@@ -96,9 +89,8 @@ void list_insert_after(Node* prev_node, uint16_t data) {
 }
 
 // Lägger till en ny nod före en given nod
-// Trådsäkerhet: Mutex skyddar liststrukturen, inklusive huvudpekaren
+// Mutex skyddar liststrukturen, inklusive huvudpekaren
 // Kräver traversering för att hitta föregångaren, skyddas av låset
-// TODO: Bör använda mem_alloc istället för malloc enligt uppgiftens krav
 void list_insert_before(Node** head, Node* next_node, uint16_t data) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - skyddar struktur och traversering
     
@@ -110,7 +102,6 @@ void list_insert_before(Node** head, Node* next_node, uint16_t data) {
     }
     
     // Allokera ny nod
-    // TODO: Använd mem_alloc för att integrera med den anpassade minneshanteraren
     Node* new_node = (Node*)malloc(sizeof(Node));
     
     // Felhantering: Kontrollera om allokeringen lyckades
@@ -137,7 +128,7 @@ void list_insert_before(Node** head, Node* next_node, uint16_t data) {
             fprintf(stderr, "Error: next_node not found in list_insert_before.\n");
             free(new_node); // Frigör den allokerade noden vid fel
         } else {
-            // Atomisk insättning mellan current och next_node
+            // Insättning mellan current och next_node
             new_node->next = next_node;
             current->next = new_node;
         }
@@ -147,9 +138,8 @@ void list_insert_before(Node** head, Node* next_node, uint16_t data) {
 }
 
 // Tar bort första noden med angivet värde från listan
-// Trådsäkerhet: Mutex skyddar både sökning och borttagning atomiskt
+// Mutex skyddar både sökning och borttagning atomiskt
 // Kritisk för att förhindra korruption vid samtidiga borttagningar eller insättningar
-// TODO: Bör använda mem_free istället för free enligt uppgiftens krav
 void list_delete(Node** head, uint16_t data) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - endast en skrivare åt gången
     
@@ -164,7 +154,7 @@ void list_delete(Node** head, uint16_t data) {
     
     // Fall 1: Nod hittades - ta bort den
     if (current) {
-        // Atomisk borttagning: Uppdatera pekare för att koppla bort noden
+        // Uppdatera pekare för att koppla bort noden
         if (prev) {
             // Borttagning mitt i eller i slutet av listan
             prev->next = current->next;
@@ -174,7 +164,7 @@ void list_delete(Node** head, uint16_t data) {
         }
         
         // Frigör noden
-        // TODO: Använd mem_free för att integrera med den anpassade minneshanteraren
+        // mem_free
         free(current);
     } else {
         // Fall 2: Nod inte hittad - felhantering
@@ -185,9 +175,8 @@ void list_delete(Node** head, uint16_t data) {
 }
 
 // Söker efter första noden med angivet värde
-// Trådsäkerhet: Låser även läsoperationer i denna grovkorniga design
+// Låser även läsoperationer i denna grovkorniga design
 // Förhindrar att läsa samtidigt som listan modifieras, vilket skulle kunna ge felaktiga resultat
-// Alternativ: Read-write lock skulle tillåta samtidiga läsningar för bättre prestanda
 Node* list_search(Node** head, uint16_t data) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - läsare måste också låsa
     
@@ -195,8 +184,6 @@ Node* list_search(Node** head, uint16_t data) {
     for (Node* current = *head; current; current = current->next) {
         if (current->data == data) {
             pthread_mutex_unlock(&list_mutex); // Kritisk sektion slut - nod hittad
-            // OBS: Returnerad pekare kan bli ogiltig om annan tråd modifierar listan senare
-            // Användaren bör hålla låset eller kopiera data om säker access krävs
             return current;
         }
     }
@@ -206,9 +193,9 @@ Node* list_search(Node** head, uint16_t data) {
 }
 
 // Visar hela listans innehåll
-// Trådsäkerhet: Låser under hela utskriften för konsekvent vy av listan
+// Låser under hela utskriften för konsekvent vy av listan
 // Förhindrar att listan ändras mitt under utskrift vilket skulle kunna ge inkonsistent output
-// Används främst för felsökning (debugging)
+// Används främst för felsökning
 void list_display(Node** head) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - behöver konsekvent vy
     
@@ -229,9 +216,9 @@ void list_display(Node** head) {
 }
 
 // Visar ett delområde av listan mellan två noder
-// Trådsäkerhet: Låser under hela utskriften för konsekvent vy
+// Låser under hela utskriften för konsekvent vy
 // Förhindrar att noder ändras eller tas bort under visning
-// Används främst för felsökning (debugging)
+// Används främst för felsökning
 void list_display_range(Node** head, Node* start_node, Node* end_node) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - behöver konsekvent vy
     
@@ -262,7 +249,7 @@ void list_display_range(Node** head, Node* start_node, Node* end_node) {
 }
 
 // Räknar antalet noder i listan
-// Trådsäkerhet: Låser under räkning för att undvika race conditions
+// Låser under räkning för att undvika race conditions
 // Utan lås kan räkningen bli felaktig om noder läggs till/tas bort samtidigt
 int list_count_nodes(Node** head) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - förhindrar samtidiga ändringar
@@ -278,10 +265,9 @@ int list_count_nodes(Node** head) {
 }
 
 // Frigör alla noder i listan
-// Trådsäkerhet: Exklusiv låsning under hela rensningen är kritisk
+// Exklusiv låsning under hela rensningen är kritisk
 // Måste säkerställa att ingen annan tråd accessar listan under nedrivning
 // Kallas typiskt vid programavslut eller när listan inte längre behövs
-// TODO: Bör använda mem_free istället för free enligt uppgiftens krav
 void list_cleanup(Node** head) {
     pthread_mutex_lock(&list_mutex); // Kritisk sektion börjar - exklusiv cleanup
     
@@ -291,7 +277,6 @@ void list_cleanup(Node** head) {
         *head = current->next; // Flytta head framåt
         
         // Frigör noden
-        // TODO: Använd mem_free för att integrera med den anpassade minneshanteraren
         free(current);
     }
     // Efter loopen är *head redan NULL

@@ -25,9 +25,6 @@ static MemBlock* block_list = NULL; // Länkad lista över alla minnesblock
 // F: Enkel att implementera och garanterar fullständig trådsäkerhet, N: bottleneck vid hög samtidighet då bara 1 operation kan göras åt gången
 static pthread_mutex_t memory_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Initierar minneshanteraren med en pool av specificerad storlek
-// Trådsäkerhet: Låser under hela initieringen för att förhindra samtidig initiering
-// Kallas bara en gång vid starten, så låsning påverkar inte prestanda
 void mem_init(size_t size) {
     pthread_mutex_lock(&memory_lock); // Serialiserar initieringen - endast en tråd kan initiera åt gången
 
@@ -45,7 +42,7 @@ void mem_init(size_t size) {
     if (!block_list) {
         fprintf(stderr, "Error: Could not allocate block list\n");
         free(memory_pool);
-        pthread_mutex_unlock(&memory_lock); // Viktigt: lås upp även vid fel
+        pthread_mutex_unlock(&memory_lock); // Viktigt: låser upp även vid fel
         exit(EXIT_FAILURE);
     }
 
@@ -58,10 +55,9 @@ void mem_init(size_t size) {
     pthread_mutex_unlock(&memory_lock); // Låser upp efter lyckad initiering
 }
 
-// Allokerar ett minnesblock av angiven storlek
-// Trådsäkerhet: Hela allokeringsprocessen är atomisk genom mutex-låsning
-// Detta förhindrar race conditions när flera trådar söker och allokerar block samtidigt
-// Använder first-fit strategi för att hitta lämpligt block
+
+// Allokeringsprocessen är skyddad genom mutex-låsning
+// First-fit strategi för att leta block
 void* mem_alloc(size_t size) {
     pthread_mutex_lock(&memory_lock); // Kritisk sektion börjar - skyddar sökning och allokering
 
@@ -75,7 +71,7 @@ void* mem_alloc(size_t size) {
     MemBlock* current = block_list;
     while (current) {
         if (current->is_free && current->size >= size) {
-            current->is_free = 0; // Atomisk markering: blocket är nu allokerat
+            current->is_free = 0; // Blocket är nu allokerat
             
             // Block-splitting: Om blocket är större än behövt, dela upp det
             if (current->size > size) {
@@ -108,10 +104,9 @@ void* mem_alloc(size_t size) {
 }
 
 // Frigör ett tidigare allokerat minnesblock
-// Trådsäkerhet: Mutex skyddar både frigöring och sammanslagning (coalescing) av block
+// Mutex skyddar både frigöring och sammanslagning (coalescing) av block
 // Detta förhindrar konflikter med samtidiga allokeringar eller andra frigöringar
 void mem_free(void* ptr) {
-    // Gränskontroll: NULL-pekare är tillåten och gör ingenting (standard C-beteende)
     if (!ptr) return;
 
     pthread_mutex_lock(&memory_lock); // Kritisk sektion börjar - skyddar frigöring och coalescing
@@ -124,10 +119,10 @@ void mem_free(void* ptr) {
     // Sök efter blocket som matchar denna offset
     while (current) {
         if (current->offset == offset) {
-            current->is_free = 1; // Atomisk markering: blocket är nu ledigt
+            current->is_free = 1; // Blocket är nu ledigt
             
-            // Coalescing (sammanslagning) framåt: Slå samman med nästa block om möjligt
-            // Detta förhindrar fragmentering genom att kombinera intilliggande lediga block
+            // Coalescing framåt: Slå samman med nästa block om möjligt
+            // Detta förhindrar fragmentering genom att kombinera närliggande lediga block
             if (current->next && current->next->is_free && 
                 current->offset + current->size == current->next->offset) {
                 MemBlock* next_block = current->next;
@@ -136,7 +131,7 @@ void mem_free(void* ptr) {
                 free(next_block); // Ta bort den överflödiga blocknoden
             }
             
-            // Coalescing (sammanslagning) bakåt: Slå samman med föregående block om möjligt
+            // Coalescing bakåt: Slå samman med föregående block om möjligt
             if (prev && prev->is_free && 
                 prev->offset + prev->size == current->offset) {
                 prev->size += current->size;
@@ -153,7 +148,7 @@ void mem_free(void* ptr) {
 }
 
 // Ändrar storleken på ett tidigare allokerat block
-// Trådsäkerhet: Komplex synkronisering eftersom funktionen kombinerar frigöring och allokering
+// Komplex synkronisering eftersom funktionen kombinerar frigöring och allokering
 // Låser först för att inspektera blocket, låser upp innan rekursiva anrop för att undvika deadlock
 void* mem_resize(void* ptr, size_t size) {
     // Gränskontroll: NULL-pekare - beter sig som malloc
@@ -215,7 +210,7 @@ void* mem_resize(void* ptr, size_t size) {
 }
 
 // Stänger ner minneshanteraren och frigör alla resurser
-// Trådsäkerhet: Låser under hela nedstängningen för att förhindra samtidig access
+// Låser under hela nedstängningen för att förhindra samtidig access
 // Kallas typiskt endast en gång vid programavslut
 void mem_deinit() {
     pthread_mutex_lock(&memory_lock); // Kritisk sektion börjar - serialiserar nedstängning
@@ -239,6 +234,6 @@ void mem_deinit() {
     pool_size = 0;
 
     pthread_mutex_unlock(&memory_lock); // Kritisk sektion slut - nedstängning klar
-    // OBS: Mutex destrueras inte här (skulle kräva pthread_mutex_destroy)
+    // OBS: Mutex förstörs inte här (skulle kräva pthread_mutex_destroy)
 }
 
